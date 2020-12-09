@@ -32,3 +32,169 @@ set.seed(1)
 
 
 ## Problem 1
+
+```{r}
+homicide_df = 
+  read_csv("data/homicide-data.csv", na = c("", "NA", "Unknown")) %>% 
+  mutate(
+    city_state = str_c(city, state, sep = ", "),
+    victim_age = as.numeric(victim_age),
+    resolution = case_when(
+      disposition == "Closed without arrest" ~ 0,
+      disposition == "Open/No arrest"        ~ 0,
+      disposition == "Closed by arrest"      ~ 1)
+  ) %>% 
+  filter(
+    victim_race %in% c("White", "Black"),
+    city_state != "Tulsa, AL") %>% 
+  select(city_state, resolution, victim_age, victim_race, victim_sex)
+```
+
+
+Start with one city.
+
+```{r}
+baltimore_df =
+  homicide_df %>% 
+  filter(city_state == "Baltimore, MD")
+glm(resolution ~ victim_age + victim_race + victim_sex, 
+    data = baltimore_df,
+    family = binomial()) %>% 
+  broom::tidy() %>% 
+  mutate(
+    OR = exp(estimate),
+    CI_lower = exp(estimate - 1.96 * std.error),
+    CI_upper = exp(estimate + 1.96 * std.error)
+  ) %>% 
+  select(term, OR, starts_with("CI")) %>% 
+  knitr::kable(digits = 3)
+```
+
+
+Try this across cities.
+
+```{r}
+models_results_df = 
+  homicide_df %>% 
+  nest(data = -city_state) %>% 
+  mutate(
+    models = 
+      map(.x = data, ~glm(resolution ~ victim_age + victim_race + victim_sex, data = .x, family = binomial())),
+    results = map(models, broom::tidy)
+  ) %>% 
+  select(city_state, results) %>% 
+  unnest(results) %>% 
+  mutate(
+    OR = exp(estimate),
+    CI_lower = exp(estimate - 1.96 * std.error),
+    CI_upper = exp(estimate + 1.96 * std.error)
+  ) %>% 
+  select(city_state, term, OR, starts_with("CI")) 
+```
+
+```{r}
+models_results_df %>% 
+  filter(term == "victim_sexMale") %>% 
+  mutate(city_state = fct_reorder(city_state, OR)) %>% 
+  ggplot(aes(x = city_state, y = OR)) + 
+  geom_point() + 
+  geom_errorbar(aes(ymin = CI_lower, ymax = CI_upper)) + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+It looks like cities with larger ORs also tends to have wider confidence interval/more dispersed.
+
+## Problem 2
+
+```{r}
+baby_df = 
+  read_csv("./data/birthweight.csv") %>% 
+  mutate(
+    babysex = as.factor(babysex),
+    frace = as.factor(frace),
+    malform = as.factor(malform),
+    mrace = as.factor(mrace)
+    ) %>% 
+  mutate(
+    babysex = recode(babysex, "1" = "Male", "2" = "Female"),
+    frace = recode(frace, "1" = "White", "2" = "Black", "3" = "Asian", "4" = "Puerto Rican",
+                   "8" = "Other", "9" = "Unknown"),
+    malform = recode(malform, "0" = "Absent", "1" = "Present"),
+    mrace = recode(mrace, "1" = "White", "2" = "Black", "3" = "Asian", "4" = "Puerto Rican",
+                   "8" = "Other")
+  )
+
+sum(is.na(baby_df))
+  
+```
+
+There is no missing data in the birthweight dataset.
+
+After doing an online research, I hypothesize birthweight is associated with mother's weight at delivery, gestational age in weeks, mother's age at delivery, mother's race, average number of cigarettes smoked, so a model is fitted based on these variables.
+
+```{r}
+mod1 = lm(bwt ~ delwt + gaweeks + momage + mrace + smoken, data = baby_df)
+```
+
+```{r}
+baby_df %>% 
+  add_predictions(mod1) %>% 
+  add_residuals(mod1) %>% 
+  ggplot(aes(x = pred, y = resid)) + 
+  geom_point() +
+  geom_smooth(method = "lm") + 
+  labs(title = "Fitted values against residuals", 
+       x = "Fitted values", 
+       y = "Residuals")
+```
+
+Compare your model to two others using cross-validated prediction error.
+
+Create a training dataset and a testing dataset.
+
+```{r}
+cv_df =
+  crossv_mc(baby_df, 100) %>% 
+  mutate(
+    train = map(train, as_tibble),
+    test = map(test, as_tibble)
+  )
+```
+
+Fit my model and the other two models to the splits.
+
+```{r}
+cv_df = 
+  cv_df %>% 
+  mutate(
+    mod1  = map(.x = train, ~lm(bwt ~ delwt + gaweeks + momage + mrace + smoken, 
+                                data = .x)),
+    mod2  = map(.x = train, ~lm(bwt ~ blength + gaweeks, data = .x)),
+    mod3  = map(.x = train, ~lm(bwt ~ bhead*blength*babysex, data = .x))
+  ) %>% 
+    mutate(
+    rmse_mod1 = map2_dbl(.x = mod1, .y = test, ~rmse(model = .x, data = .y)),
+    rmse_mod2 = map2_dbl(.x = mod2, .y = test, ~rmse(model = .x, data = .y)),
+    rmse_mod3 = map2_dbl(.x = mod3, .y = test, ~rmse(model = .x, data = .y))
+    )
+```
+
+Violin plots of RMSEs
+
+```{r}
+cv_df %>% 
+  select(starts_with("rmse")) %>% 
+  pivot_longer(
+    everything(),
+    names_to = "model", 
+    values_to = "rmse",
+    names_prefix = "rmse_"
+  ) %>% 
+  ggplot(aes(x = model, y = rmse)) + 
+  geom_violin()
+```
+
+In terms of the cross-validated prediction error, the best model is the one using head circumference, length, sex, and all interactions - with the lowest RMSE.
+
+
+
