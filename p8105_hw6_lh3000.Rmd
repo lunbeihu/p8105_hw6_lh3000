@@ -104,6 +104,7 @@ models_results_df %>%
 
 It looks like cities with larger ORs also tends to have wider confidence interval/more dispersed.
 
+
 ## Problem 2
 
 Import the birthweight data and do some data cleaning.
@@ -132,11 +133,18 @@ sum(is.na(baby_df))
 
 There is no missing data in the birthweight dataset.
 
+
 After doing an online research, I hypothesize birthweight is associated with mother's weight at delivery, gestational age in weeks, mother's age at delivery, mother's race, average number of cigarettes smoked, so a model is fitted based on these variables.
 
 ```{r}
-mod1 = lm(bwt ~ delwt + gaweeks + momage + mrace + smoken, data = baby_df)
+mod1 = lm(bwt ~ delwt + gaweeks + momage + mrace + smoken, data = baby_df) 
+broom::tidy(mod1)
 ```
+
+Except mother's age at delivery, all other variables are significant with a p-value smaller than 0.05.
+
+
+Plot of model residuals against fitted values
 
 ```{r}
 baby_df %>% 
@@ -149,6 +157,8 @@ baby_df %>%
        x = "Fitted values", 
        y = "Residuals")
 ```
+
+The residuals spread around 0 along the fitted values - not showing any pattern associated with fitted values.
 
 Compare your model to two others using cross-validated prediction error.
 
@@ -240,6 +250,9 @@ weather_boot_results_r %>%
   geom_density()
 ```
 
+Estimated R-square is approximately normally distributed.
+
+
 95% CI for estimated R-square is (`r quantile(pull(weather_boot_results_r, r.squared), probs = c(0.025, 0.975))`).
 
 
@@ -272,4 +285,7 @@ weather_boot_results_log %>%
   geom_density()
 ```
 
+Estimated log(b0 * b1) is approximately normally distributed.
+
 95% CI for log(b0 * b1) is (`r quantile(pull(weather_boot_results_log, log_b0b1), probs = c(0.025, 0.975))`).
+
